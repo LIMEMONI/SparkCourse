@@ -2,7 +2,7 @@
 """
 Created on Mon Sep  7 15:28:00 2020
 
-@author: Frank
+이 코드는 Spark를 사용하여 인기있는 영화를 찾는 예제입니다.
 """
 
 from pyspark.sql import SparkSession
@@ -12,8 +12,8 @@ import codecs
 
 def loadMovieNames():
     movieNames = {}
-    # CHANGE THIS TO THE PATH TO YOUR u.ITEM FILE:
-    with codecs.open("E:/SparkCourse/ml-100k/u.ITEM", "r", encoding='ISO-8859-1', errors='ignore') as f:
+    # u.ITEM 파일의 경로를 여기에 입력하세요.
+    with codecs.open("C:/SparkCourse/ml-100k/u.ITEM", "r", encoding='ISO-8859-1', errors='ignore') as f:
         for line in f:
             fields = line.split('|')
             movieNames[int(fields[0])] = fields[1]
@@ -21,34 +21,38 @@ def loadMovieNames():
 
 spark = SparkSession.builder.appName("PopularMovies").getOrCreate()
 
-nameDict = spark.sparkContext.broadcast(loadMovieNames())
+# loadMovieNames 함수를 호출하여 반환된 결과를 nameDict에 저장하고, 
+# sparkContext.broadcast를 사용하여 브로드캐스트 변수로 만듭니다.
+nameDict = spark.sparkContext.broadcast(loadMovieNames())  
 
-# Create schema when reading u.data
+# u.data를 읽을 때 스키마 생성
 schema = StructType([ \
                      StructField("userID", IntegerType(), True), \
                      StructField("movieID", IntegerType(), True), \
                      StructField("rating", IntegerType(), True), \
                      StructField("timestamp", LongType(), True)])
 
-# Load up movie data as dataframe
+# 영화 데이터를 데이터프레임으로 로드
 moviesDF = spark.read.option("sep", "\t").schema(schema).csv("file:///SparkCourse/ml-100k/u.data")
 
+# 영화별로 카운트
 movieCounts = moviesDF.groupBy("movieID").count()
 
-# Create a user-defined function to look up movie names from our broadcasted dictionary
+# 브로드캐스트된 딕셔너리에서 영화 이름을 찾기 위한 사용자 정의 함수 생성
 def lookupName(movieID):
     return nameDict.value[movieID]
 
-lookupNameUDF = func.udf(lookupName)
+# lookupName 함수를 UDF(User Defined Function)로 등록
+lookupNameUDF = func.udf(lookupName)  
 
-# Add a movieTitle column using our new udf
+# 새로운 UDF를 사용하여 movieTitle 열 추가
 moviesWithNames = movieCounts.withColumn("movieTitle", lookupNameUDF(func.col("movieID")))
 
-# Sort the results
+# 결과 정렬
 sortedMoviesWithNames = moviesWithNames.orderBy(func.desc("count"))
 
-# Grab the top 10
+# 상위 10개 출력
 sortedMoviesWithNames.show(10, False)
 
-# Stop the session
+# 세션 종료
 spark.stop()
